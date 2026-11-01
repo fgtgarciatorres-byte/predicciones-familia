@@ -182,14 +182,20 @@ const db = F.db;
 const MAX_PREDS = 3;
 const app = document.getElementById("app");
 
-let me = JSON.parse(localStorage.getItem("me") || "null");
-let isAdmin = sessionStorage.getItem("admin") === "1";
-let users = [], preds = [], votes = [], state = {phase:"predicciones", year:new Date().getFullYear()+1};
-let lastKey = "", celebrated = false;
+/* Un "grupo" es una familia: todos sus datos viven bajo el prefijo "<grupo>:" */
+let group = JSON.parse(localStorage.getItem("group") || "null");
+let me = group ? JSON.parse(localStorage.getItem("me:"+group.id) || "null") : null;
+let isAdmin = group ? sessionStorage.getItem("admin:"+group.id) === "1" : false;
+let users = [], preds = [], votes = [], groupDoc = null;
+let state = {phase:"predicciones", year:new Date().getFullYear()+1};
+let lastKey = "", celebrated = false, unsubs = [], gmode = "join";
+const col = n => collection(db, group.id+":"+n);
+const dc = (n,id) => doc(db, group.id+":"+n, id);
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const slug = s => s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-");
-const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+const slug = s => s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+const norm = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+const val = id => (document.getElementById(id)?.value || "").trim();
 async function hash(s){
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("fam-pred:"+s));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
@@ -225,11 +231,21 @@ function confetti(n = 140){
   })();
 }
 
-/* ---- Suscripciones en tiempo real ---- */
-onSnapshot(collection(db,"users"), s => { users = s.docs.map(d=>({id:d.id,...d.data()})); render(); });
-onSnapshot(collection(db,"predictions"), s => { preds = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0)); render(); });
-onSnapshot(collection(db,"votes"), s => { votes = s.docs.map(d=>({id:d.id,...d.data()})); render(); });
-onSnapshot(doc(db,"config","state"), s => { if(s.exists()) state = {...state,...s.data()}; render(); });
+/* ---- Suscripciones en tiempo real (solo del grupo activo) ---- */
+function subscribe(){
+  unsubs.forEach(u => u()); unsubs = [];
+  users = []; preds = []; votes = []; groupDoc = null;
+  state = {phase:"predicciones", year:new Date().getFullYear()+1};
+  if(!group) return;
+  const subs = [
+    onSnapshot(col("users"), s => { users = s.docs.map(d=>({id:d.id,...d.data()})); render(); }),
+    onSnapshot(col("predictions"), s => { preds = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0)); render(); }),
+    onSnapshot(col("votes"), s => { votes = s.docs.map(d=>({id:d.id,...d.data()})); render(); }),
+    onSnapshot(dc("config","state"), s => { if(s.exists()) state = {...state,...s.data()}; render(); }),
+    onSnapshot(doc(db,"groups",group.id), s => { groupDoc = s.exists() ? s.data() : null; render(); })
+  ];
+  unsubs = subs;
+}
 
 /* ---- Puntuación ---- */
 function scores(){
@@ -247,23 +263,52 @@ function scores(){
   }).sort((a,b)=>b.total-a.total);
 }
 
+/* ---- Grupos ---- */
+function enterGroup(g){
+  group = g; localStorage.setItem("group", JSON.stringify(g));
+  me = JSON.parse(localStorage.getItem("me:"+g.id) || "null");
+  isAdmin = sessionStorage.getItem("admin:"+g.id) === "1";
+  lastKey = ""; subscribe(); render();
+}
+window.setGmode = m => { gmode = m; render(); };
+window.createGroup = async () => {
+  const name = val("gn"), pin = val("gp"), adm = val("ga"), id = slug(name);
+  if(!id) return alert("Pon un nombre para el grupo (con letras o números).");
+  if(pin.length<4) return alert("El PIN del grupo necesita al menos 4 caracteres.");
+  if(adm.length<4) return alert("El código de organizador necesita al menos 4 caracteres.");
+  if((await getDoc(doc(db,"groups",id))).exists()) return alert("Ya existe un grupo con ese nombre. Elige otro o entra en él.");
+  await setDoc(doc(db,"groups",id), {name, pinHash: await hash("group:"+id+":"+pin), adminHash: await hash("admin:"+id+":"+adm), createdAt: serverTimestamp()});
+  enterGroup({id,name});
+};
+window.joinGroup = async () => {
+  const name = val("gn"), pin = val("gp"), id = slug(name);
+  if(!id || !pin) return alert("Escribe el nombre del grupo y su PIN.");
+  const snap = await getDoc(doc(db,"groups",id));
+  if(!snap.exists() || snap.data().pinHash !== await hash("group:"+id+":"+pin)) return alert("Nombre de grupo o PIN incorrectos.");
+  enterGroup({id, name: snap.data().name});
+};
+window.leaveGroup = () => {
+  group = null; me = null; isAdmin = false; localStorage.removeItem("group");
+  lastKey = ""; subscribe(); render();
+};
+
 /* ---- Acciones ---- */
 window.login = async () => {
-  const name = document.getElementById("n").value.trim();
-  const pin = document.getElementById("p").value.trim();
+  const name = val("n"), pin = val("p");
   if(!name || pin.length<4) return alert("Pon tu nombre y un PIN de al menos 4 caracteres.");
-  const id = slug(name), ref = doc(db,"users",id), h = await hash(pin), snap = await getDoc(ref);
+  const id = slug(name); if(!id) return alert("El nombre debe tener letras o números.");
+  const ref = dc("users",id), h = await hash(pin), snap = await getDoc(ref);
   if(snap.exists()){
-    if(snap.data().pinHash !== h) return alert("Ese nombre ya existe y el PIN no coincide.");
+    if(snap.data().pinHash !== h) return alert("Ese nombre ya existe en el grupo y el PIN no coincide.");
   } else {
     await setDoc(ref,{name,pinHash:h,published:false,createdAt:serverTimestamp()});
   }
-  me = {id,name}; localStorage.setItem("me",JSON.stringify(me)); render();
+  me = {id,name}; localStorage.setItem("me:"+group.id,JSON.stringify(me)); render();
 };
-window.logout = () => { localStorage.removeItem("me"); sessionStorage.removeItem("admin"); me=null; isAdmin=false; render(); };
+window.logout = () => { localStorage.removeItem("me:"+group.id); sessionStorage.removeItem("admin:"+group.id); me=null; isAdmin=false; render(); };
 
 window.addPred = async () => {
-  const t = document.getElementById("t").value.trim();
+  const t = val("t");
   if(!t) return;
   if(preds.filter(p=>p.userId===me.id).length>=MAX_PREDS) return alert("Máximo "+MAX_PREDS+" predicciones.");
   const n = norm(t), words = new Set(n.split(" ").filter(w=>w.length>3));
@@ -275,23 +320,22 @@ window.addPred = async () => {
   });
   if(dup && !confirm("Se parece mucho a esta predicción de "+dup.userName+":\n\n«"+dup.text+"»\n\n¿Añadirla igualmente?")) return;
   document.getElementById("t").value = "";
-  await addDoc(collection(db,"predictions"),{userId:me.id,userName:me.name,text:t,outcome:null,createdAt:serverTimestamp()});
+  await addDoc(col("predictions"),{userId:me.id,userName:me.name,text:t,outcome:null,createdAt:serverTimestamp()});
 };
-window.delPred = id => deleteDoc(doc(db,"predictions",id));
+window.delPred = id => deleteDoc(dc("predictions",id));
 window.publish = async () => {
-  if(!confirm("Al publicar, tus predicciones quedan visibles para todos y ya no podrás cambiarlas. ¿Publicar?")) return;
-  await updateDoc(doc(db,"users",me.id),{published:true}); confetti();
+  if(!confirm("Al publicar, tus predicciones quedan visibles para todo el grupo y ya no podrás cambiarlas. ¿Publicar?")) return;
+  await updateDoc(dc("users",me.id),{published:true}); confetti();
 };
-window.vote = (predId,val) => setDoc(doc(db,"votes",me.id+"_"+predId),{userId:me.id,predId,vote:val});
-window.setPhase = p => setDoc(doc(db,"config","state"),{phase:p},{merge:true});
-window.setOutcome = (id,val) => updateDoc(doc(db,"predictions",id),{outcome:val});
+window.vote = (predId,v) => setDoc(dc("votes",me.id+"_"+predId),{userId:me.id,predId,vote:v});
+window.setPhase = p => setDoc(dc("config","state"),{phase:p},{merge:true});
+window.setOutcome = (id,v) => updateDoc(dc("predictions",id),{outcome:v});
 window.adminLogin = async () => {
-  const code = prompt("Código de administrador (si es la primera vez, el que elijas se guardará):");
+  if(!groupDoc) return alert("No encuentro los datos del grupo. Recarga la página.");
+  const code = prompt("Código de organizador de este grupo:");
   if(!code) return;
-  const h = await hash("admin:"+code), ref = doc(db,"config","admin"), snap = await getDoc(ref);
-  if(!snap.exists()) await setDoc(ref,{hash:h});
-  else if(snap.data().hash !== h) return alert("Código incorrecto.");
-  isAdmin = true; sessionStorage.setItem("admin","1"); render();
+  if(await hash("admin:"+group.id+":"+code.trim()) !== groupDoc.adminHash) return alert("Código incorrecto.");
+  isAdmin = true; sessionStorage.setItem("admin:"+group.id,"1"); render();
 };
 
 const pubIds = () => new Set(users.filter(u=>u.published).map(u=>u.id));
@@ -300,22 +344,49 @@ const PHASE_NAME = {predicciones:"✍️ Haciendo predicciones", votacion:"🗳�
 
 /* ---- Vistas ---- */
 function render(){
-  const keep = document.getElementById("t");
-  const saved = keep ? {v: keep.value, f: document.activeElement === keep} : null;
-  const key = (me ? me.id : "login") + "|" + state.phase;
+  const fields = ["n","p","t","gn","gp","ga"], saved = {}, focusId = document.activeElement && document.activeElement.id;
+  fields.forEach(f => { const e = document.getElementById(f); if(e) saved[f] = e.value; });
+  const restore = () => {
+    for(const f in saved){ const e = document.getElementById(f); if(e) e.value = saved[f]; }
+    if(focusId && saved[focusId] !== undefined){ const e = document.getElementById(focusId); if(e) e.focus(); }
+  };
+  const key = (group ? group.id : "-") + "|" + (me ? me.id : "login") + "|" + state.phase + "|" + gmode;
   const animate = key !== lastKey; lastKey = key;
   let i = 0; const st = () => `style="--i:${i++}"`;
   let h = "";
+  const localBanner = LOCAL ? `<div class="card mut" ${st()}>Modo local: los datos se guardan solo en este móvil.</div>` : "";
+  app.className = animate ? "anim" : "";
 
-  if(!me){
-    app.className = animate ? "anim" : "";
+  /* 0) Elegir o crear grupo */
+  if(!group){
     app.innerHTML = `<div class="hero"><div class="big">🎆</div><h1>Predicciones ${state.year}</h1>
       <p class="mut">Cena de fin de año en familia: ¿quién acierta más?</p></div>
-      ${LOCAL?`<div class="card mut" ${st()}>Modo local: los datos se guardan solo en este móvil.</div>`:""}
-      <div class="card" ${st()}><input id="n" placeholder="Tu nombre" autocomplete="off"><input id="p" type="password" placeholder="PIN (mín. 4 caracteres)">
+      ${localBanner}
+      <div class="row" style="justify-content:center" ${st()}>
+        <button class="${gmode==="join"?"btn":"ghost"}" onclick="setGmode('join')">Entrar a mi grupo</button>
+        <button class="${gmode==="create"?"btn":"ghost"}" onclick="setGmode('create')">Crear un grupo</button></div>
+      ${gmode==="join" ? `<div class="card" ${st()}>
+        <input id="gn" placeholder="Nombre del grupo" autocomplete="off"><input id="gp" type="password" placeholder="PIN del grupo">
+        <button class="btn block pulse" onclick="joinGroup()">Entrar al grupo</button>
+        <p class="mut" style="margin-bottom:0">Pídele el nombre y el PIN a quien creó el grupo.</p></div>`
+      : `<div class="card" ${st()}>
+        <input id="gn" placeholder="Nombre del grupo (ej.: Familia García)" autocomplete="off">
+        <input id="gp" type="password" placeholder="PIN del grupo (se lo darás a tu familia)">
+        <input id="ga" type="password" placeholder="Código de organizador (solo para ti)">
+        <button class="btn block pulse" onclick="createGroup()">Crear grupo</button>
+        <p class="mut" style="margin-bottom:0">Con el código de organizador abrirás la votación y marcarás los resultados.</p></div>`}`;
+    restore(); return;
+  }
+
+  /* 1) Darse de alta / entrar en el grupo */
+  if(!me){
+    app.innerHTML = `<div class="hero"><div class="big">🎆</div><h1>Predicciones ${state.year}</h1></div>
+      ${localBanner}
+      <div class="row between" ${st()}><span class="tag">👨‍👩‍👧 ${esc(group.name)}</span><button class="ghost" onclick="leaveGroup()">Cambiar de grupo</button></div>
+      <div class="card" ${st()}><input id="n" placeholder="Tu nombre" autocomplete="off"><input id="p" type="password" placeholder="Tu PIN personal (mín. 4 caracteres)">
       <button class="btn block pulse" onclick="login()">Entrar / darme de alta</button>
-      <p class="mut" style="margin-bottom:0">Si ya te diste de alta, usa el mismo nombre y PIN.</p></div>`;
-    return;
+      <p class="mut" style="margin-bottom:0">Si ya te diste de alta, usa el mismo nombre y PIN. Dentro verás las predicciones que ya han publicado los demás.</p></div>`;
+    restore(); return;
   }
 
   const meUser = users.find(u=>u.id===me.id);
@@ -323,9 +394,9 @@ function render(){
   const mine = preds.filter(p=>p.userId===me.id);
   const pub = pubIds();
 
-  h += LOCAL ? `<div class="card mut" ${st()}>Modo local: los datos se guardan solo en este móvil.</div>` : "";
+  h += localBanner;
   h += `<div class="row between"><h1>🎆 Predicciones ${state.year}</h1><button class="ghost" onclick="logout()">Salir</button></div>
-    <p class="mut">Hola, <b style="color:var(--ink)">${esc(me.name)}</b> · ${users.length} participantes</p>
+    <p class="mut">Hola, <b style="color:var(--ink)">${esc(me.name)}</b> · 👨‍👩‍👧 ${esc(group.name)} · ${users.length} participantes</p>
     <span class="tag">${PHASE_NAME[state.phase]}</span>`;
 
   /* FASE 1 */
@@ -336,7 +407,7 @@ function render(){
       if(mine.length<MAX_PREDS) h += `<div class="card" ${st()}><textarea id="t" rows="2" placeholder="Ej.: Canarias ganará su primera medalla olímpica…"></textarea>
         <button class="btn" onclick="addPred()">➕ Añadir predicción</button></div>`;
       h += `<button class="btn block ${mine.length?"pulse":""}" ${mine.length?"":"disabled"} onclick="publish()">🚀 Publicar mis predicciones</button>
-        <p class="mut">Al publicar quedan visibles para todos (para que nadie las repita) y no se pueden cambiar.</p>`;
+        <p class="mut">Al publicar quedan visibles para todo el grupo (para que nadie las repita) y no se pueden cambiar.</p>`;
     } else {
       h += `<p class="mut">Ya están publicadas. Espera a que el resto termine y el organizador abra la votación.</p>`;
     }
@@ -399,12 +470,14 @@ function render(){
           <button class="no ${p.outcome===false?"sel":""}" onclick="setOutcome('${p.id}',false)">❌ No</button></div></div>`).join("") + `</div>`;
     }
   }
+  h += `<div style="margin-top:26px"><button class="ghost" onclick="leaveGroup()">↩ Cambiar de grupo</button></div>`;
 
-  app.className = animate ? "anim" : "";
   app.innerHTML = h;
-  if(saved){ const t = document.getElementById("t"); if(t){ t.value = saved.v; if(saved.f) t.focus(); } }
+  restore();
   if(animate && state.phase==="resultados" && !celebrated){ celebrated = true; setTimeout(()=>confetti(200), 400); }
 }
+
+subscribe();
 render();
 </script>
 </body>
