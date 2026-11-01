@@ -380,12 +380,16 @@ function render(){
 
   /* 1) Darse de alta / entrar en el grupo */
   if(!me){
+    const shown = preds.filter(p => state.phase !== "predicciones" || pubIds().has(p.userId));
     app.innerHTML = `<div class="hero"><div class="big">🎆</div><h1>Predicciones ${state.year}</h1></div>
       ${localBanner}
       <div class="row between" ${st()}><span class="tag">👨‍👩‍👧 ${esc(group.name)}</span><button class="ghost" onclick="leaveGroup()">Cambiar de grupo</button></div>
       <div class="card" ${st()}><input id="n" placeholder="Tu nombre" autocomplete="off"><input id="p" type="password" placeholder="Tu PIN personal (mín. 4 caracteres)">
       <button class="btn block pulse" onclick="login()">Entrar / darme de alta</button>
-      <p class="mut" style="margin-bottom:0">Si ya te diste de alta, usa el mismo nombre y PIN. Dentro verás las predicciones que ya han publicado los demás.</p></div>`;
+      <p class="mut" style="margin-bottom:0">Si ya te diste de alta, usa el mismo nombre y PIN.</p></div>
+      <h2>👀 Ya publicadas en el grupo (${shown.length})</h2>
+      ${shown.length ? shown.map(p=>`<div class="card" ${st()}><div class="who">${esc(p.userName)}</div><div class="pred">${esc(p.text)}</div></div>`).join("")
+        : `<p class="mut">Todavía nadie ha publicado. Cuando lo hagan las verás aquí para no repetirlas.</p>`}`;
     restore(); return;
   }
 
