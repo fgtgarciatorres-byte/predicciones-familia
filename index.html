@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#14123a">
+<title>Predicciones en familia</title>
+<style>
+  :root{
+    --bg1:#12102f;--bg2:#2b1457;--gold:#ffd166;--pink:#ff5d8f;--orange:#ff9b54;
+    --ok1:#2ecc8f;--ok2:#12a06b;--ko1:#ff6b6b;--ko2:#d63a4a;
+    --glass:rgba(255,255,255,.09);--line:rgba(255,255,255,.16);--ink:#f6f2ff;--mut:#b9b0d6;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;min-height:100%}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);
+    background:linear-gradient(160deg,var(--bg1),var(--bg2) 60%,#46186b);background-attachment:fixed;
+  }
+  #stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+  main{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:18px 16px 60px}
+
+  h1{font-size:1.7rem;margin:.1em 0;line-height:1.1;font-weight:800;
+     background:linear-gradient(90deg,var(--gold),var(--pink),var(--gold));background-size:200% auto;
+     -webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 5s linear infinite}
+  h2{font-size:1.05rem;margin:1.6em 0 .5em;color:var(--gold);letter-spacing:.02em}
+  @keyframes shine{to{background-position:200% center}}
+  .mut{color:var(--mut);font-size:.9rem}
+  .hero{text-align:center;padding:26px 0 8px}
+  .hero .big{font-size:3.2rem;display:inline-block;animation:bob 2.4s ease-in-out infinite}
+  @keyframes bob{50%{transform:translateY(-8px) rotate(6deg)}}
+
+  .card{
+    background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:14px;margin:10px 0;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .anim .card,.anim .chip{animation:rise .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0)*60ms)}
+  @keyframes rise{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+  .pred{font-size:1.05rem;line-height:1.35}
+  .who{font-size:.8rem;color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+
+  input,textarea{
+    width:100%;padding:13px 14px;margin:5px 0;color:var(--ink);font:inherit;
+    background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:12px;outline:none;transition:.2s;
+  }
+  input::placeholder,textarea::placeholder{color:#9d93c2}
+  input:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(255,209,102,.2)}
+
+  button{font:inherit;font-weight:700;border:0;border-radius:14px;padding:12px 18px;margin:3px 0;color:#fff;cursor:pointer;
+    transition:transform .15s,box-shadow .2s,filter .2s;box-shadow:0 6px 16px rgba(0,0,0,.3)}
+  button:active{transform:scale(.94)}
+  button:disabled{opacity:.4;pointer-events:none}
+  .btn{background:linear-gradient(135deg,var(--pink),var(--orange))}
+  .btn:hover{filter:brightness(1.1);box-shadow:0 8px 22px rgba(255,93,143,.45)}
+  .btn.block{width:100%;font-size:1.05rem;padding:14px}
+  .btn.pulse{animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,93,143,.6)}70%{box-shadow:0 0 0 14px rgba(255,93,143,0)}100%{box-shadow:0 0 0 0 rgba(255,93,143,0)}}
+  .ghost{background:rgba(255,255,255,.12);box-shadow:none;padding:9px 14px;font-weight:600}
+  .yes{background:linear-gradient(135deg,var(--ok1),var(--ok2))}
+  .no{background:linear-gradient(135deg,var(--ko1),var(--ko2))}
+  .vote{flex:1;font-size:1.05rem;opacity:.55;transform:scale(.97)}
+  .vote.sel{opacity:1;transform:scale(1.03);box-shadow:0 0 0 3px #fff,0 8px 24px rgba(0,0,0,.4)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .between{justify-content:space-between}
+
+  .tag{display:inline-block;font-size:.78rem;font-weight:700;padding:4px 11px;border-radius:99px;
+       background:rgba(255,209,102,.16);color:var(--gold);border:1px solid rgba(255,209,102,.4)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{font-size:.82rem;padding:5px 11px;border-radius:99px;background:rgba(255,255,255,.1)}
+  .chip.done{background:linear-gradient(135deg,var(--ok1),var(--ok2))}
+  .lock{color:var(--gold);font-weight:700}
+  .bar{height:10px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden;margin:8px 0}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--pink));border-radius:99px;transition:width .5s}
+
+  .rank{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line)}
+  .rank:last-child{border:0}
+  .pos{font-size:1.5rem;width:36px;text-align:center}
+  .rank .nm{flex:1;font-weight:700}
+  .rank .dt{font-size:.78rem;color:var(--mut)}
+  .rank .pts{font-size:1.5rem;font-weight:800;color:var(--gold)}
+  .res{font-weight:700;margin-top:6px}
+  .admin{border:1px dashed var(--line);border-radius:16px;padding:6px 12px;margin-top:10px}
+  canvas.confetti{position:fixed;inset:0;z-index:50;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<main id="app">Cargando…</main>
+
+<script type="module">
+/* ====== 1) PEGA AQUÍ LA URL DE TU APLICACIÓN WEB DE GOOGLE APPS SCRIPT ====== */
+/* Termina en /exec. Si la dejas vacía, la app funciona en MODO LOCAL (datos solo en este móvil). */
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbylsVdIrLVYSr37X_l6EKEofWG3jiZiNj0h1QC5nF-fpZOY30gU55G04HgtH2LExFKu9Q/exec";
+/* ============================================================================ */
+
+const LOCAL = !SHEETS_URL;
+
+function makeSheets(url){
+  let cache = {}, last = "", pending = 0;
+  const listeners = new Set();
+  const notify = () => listeners.forEach(f => f());
+  const snapDoc = (id, data) => ({id, exists: () => data !== undefined, data: () => data});
+  async function pull(){
+    if(pending > 0) return;
+    try{
+      const r = await fetch(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now());
+      const j = await r.json(); if(pending > 0) return;
+      const n = {}; j.rows.forEach(x => { (n[x.c] = n[x.c] || {})[x.id] = x.data; });
+      const s = JSON.stringify(n);
+      if(s !== last){ cache = n; last = s; notify(); }
+    }catch(e){ console.warn("Sin conexión con la hoja", e); }
+  }
+  const send = async body => {
+    pending++;
+    try{ await fetch(url, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(body)}); }
+    finally{ pending--; }
+    await pull();
+  };
+  const setDoc = async (r, data, opt) => {
+    const merge = !!(opt && opt.merge);
+    cache[r.c] = cache[r.c] || {};
+    cache[r.c][r.id] = merge ? {...cache[r.c][r.id], ...data} : data; notify();
+    await send({op: merge ? "merge" : "set", c: r.c, id: r.id, data});
+  };
+  pull(); setInterval(pull, 4000);
+  document.addEventListener("visibilitychange", () => { if(!document.hidden) pull(); });
+  return {
+    db: {},
+    collection: (db, c) => ({c}),
+    doc: (db, c, id) => ({c, id}),
+    serverTimestamp: () => ({seconds: Math.floor(Date.now()/1000)}),
+    setDoc,
+    getDoc: async r => { await pull(); return snapDoc(r.id, (cache[r.c] || {})[r.id]); },
+    addDoc: async (r, data) => setDoc({c: r.c, id: crypto.randomUUID()}, data),
+    deleteDoc: async r => { if(cache[r.c]) delete cache[r.c][r.id]; notify(); await send({op:"delete", c:r.c, id:r.id}); },
+    updateDoc: async (r, data) => setDoc(r, data, {merge: true}),
+    onSnapshot: (r, cb) => {
+      const fire = () => {
+        const col = cache[r.c] || {};
+        if(r.id) cb(snapDoc(r.id, col[r.id]));
+        else cb({docs: Object.entries(col).map(([id, d]) => ({id, data: () => d}))});
+      };
+      listeners.add(fire); fire(); return () => listeners.delete(fire);
+    }
+  };
+}
+
+function makeLocal(){
+  const listeners = new Set();
+  const load = () => JSON.parse(localStorage.getItem("localdb") || "{}");
+  const save = d => { localStorage.setItem("localdb", JSON.stringify(d)); listeners.forEach(f => f()); };
+  const snapDoc = (id, data) => ({id, exists: () => data !== undefined, data: () => data});
+  const setDoc = async (r, data, opt) => {
+    const d = load(); d[r.c] = d[r.c] || {};
+    d[r.c][r.id] = opt && opt.merge ? {...d[r.c][r.id], ...data} : data; save(d);
+  };
+  return {
+    db: {},
+    collection: (db, c) => ({c}),
+    doc: (db, c, id) => ({c, id}),
+    serverTimestamp: () => ({seconds: Math.floor(Date.now()/1000)}),
+    setDoc,
+    getDoc: async r => snapDoc(r.id, (load()[r.c] || {})[r.id]),
+    addDoc: async (r, data) => setDoc({c: r.c, id: crypto.randomUUID()}, data),
+    deleteDoc: async r => { const d = load(); if(d[r.c]) delete d[r.c][r.id]; save(d); },
+    updateDoc: async (r, data) => setDoc(r, data, {merge: true}),
+    onSnapshot: (r, cb) => {
+      const fire = () => {
+        const col = load()[r.c] || {};
+        if(r.id) cb(snapDoc(r.id, col[r.id]));
+        else cb({docs: Object.entries(col).map(([id, d]) => ({id, data: () => d}))});
+      };
+      listeners.add(fire); fire(); return () => listeners.delete(fire);
+    }
+  };
+}
+
+const F = LOCAL ? makeLocal() : makeSheets(SHEETS_URL);
+const {collection,doc,setDoc,getDoc,addDoc,deleteDoc,updateDoc,onSnapshot,serverTimestamp} = F;
+const db = F.db;
+
+const MAX_PREDS = 3;
+const app = document.getElementById("app");
+
+let me = JSON.parse(localStorage.getItem("me") || "null");
+let isAdmin = sessionStorage.getItem("admin") === "1";
+let users = [], preds = [], votes = [], state = {phase:"predicciones", year:new Date().getFullYear()+1};
+let lastKey = "", celebrated = false;
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const slug = s => s.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-");
+const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+async function hash(s){
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("fam-pred:"+s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+/* ---- Fondo de estrellas ---- */
+(function stars(){
+  const c = document.getElementById("stars"), x = c.getContext("2d");
+  let w, h, pts = [];
+  const resize = () => { w = c.width = innerWidth; h = c.height = innerHeight;
+    pts = Array.from({length: Math.round(w*h/9000)}, () => ({x:Math.random()*w, y:Math.random()*h, r:Math.random()*1.5+.3, p:Math.random()*6.28, s:.01+Math.random()*.03})); };
+  addEventListener("resize", resize); resize();
+  (function loop(){
+    x.clearRect(0,0,w,h);
+    pts.forEach(p => { p.p += p.s; x.globalAlpha = .25 + .6*Math.abs(Math.sin(p.p)); x.fillStyle = "#fff"; x.beginPath(); x.arc(p.x,p.y,p.r,0,6.28); x.fill(); });
+    requestAnimationFrame(loop);
+  })();
+})();
+
+/* ---- Confeti ---- */
+function confetti(n = 140){
+  const c = document.createElement("canvas"); c.className = "confetti"; document.body.appendChild(c);
+  const x = c.getContext("2d"); c.width = innerWidth; c.height = innerHeight;
+  const cols = ["#ffd166","#ff5d8f","#ff9b54","#2ecc8f","#6ec5ff","#c79bff"];
+  const ps = Array.from({length:n}, () => ({x:innerWidth/2, y:innerHeight*.35, vx:(Math.random()-.5)*14, vy:-Math.random()*13-3,
+    g:.3, r:Math.random()*6+3, a:Math.random()*6, va:(Math.random()-.5)*.4, col:cols[Math.random()*cols.length|0], life:1}));
+  (function loop(){
+    x.clearRect(0,0,c.width,c.height); let alive = false;
+    ps.forEach(p => { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.a += p.va; p.life -= .006;
+      if(p.life > 0 && p.y < c.height + 20){ alive = true; x.save(); x.globalAlpha = Math.max(p.life,0); x.translate(p.x,p.y); x.rotate(p.a);
+        x.fillStyle = p.col; x.fillRect(-p.r, -p.r/2, p.r*2, p.r); x.restore(); } });
+    alive ? requestAnimationFrame(loop) : c.remove();
+  })();
+}
+
+/* ---- Suscripciones en tiempo real ---- */
+onSnapshot(collection(db,"users"), s => { users = s.docs.map(d=>({id:d.id,...d.data()})); render(); });
+onSnapshot(collection(db,"predictions"), s => { preds = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0)); render(); });
+onSnapshot(collection(db,"votes"), s => { votes = s.docs.map(d=>({id:d.id,...d.data()})); render(); });
+onSnapshot(doc(db,"config","state"), s => { if(s.exists()) state = {...state,...s.data()}; render(); });
+
+/* ---- Puntuación ---- */
+function scores(){
+  return users.map(u=>{
+    const mine = preds.filter(p=>p.userId===u.id);
+    const ownHit = mine.filter(p=>p.outcome===true).length;
+    const ownMiss = mine.filter(p=>p.outcome===false).length;
+    let voteHit=0, voteMiss=0;
+    votes.filter(v=>v.userId===u.id).forEach(v=>{
+      const p = preds.find(x=>x.id===v.predId);
+      if(!p || typeof p.outcome!=="boolean") return;
+      (v.vote===p.outcome) ? voteHit++ : voteMiss++;
+    });
+    return {name:u.name, ownHit, ownMiss, voteHit, voteMiss, total: ownHit+voteHit};
+  }).sort((a,b)=>b.total-a.total);
+}
+
+/* ---- Acciones ---- */
+window.login = async () => {
+  const name = document.getElementById("n").value.trim();
+  const pin = document.getElementById("p").value.trim();
+  if(!name || pin.length<4) return alert("Pon tu nombre y un PIN de al menos 4 caracteres.");
+  const id = slug(name), ref = doc(db,"users",id), h = await hash(pin), snap = await getDoc(ref);
+  if(snap.exists()){
+    if(snap.data().pinHash !== h) return alert("Ese nombre ya existe y el PIN no coincide.");
+  } else {
+    await setDoc(ref,{name,pinHash:h,published:false,createdAt:serverTimestamp()});
+  }
+  me = {id,name}; localStorage.setItem("me",JSON.stringify(me)); render();
+};
+window.logout = () => { localStorage.removeItem("me"); sessionStorage.removeItem("admin"); me=null; isAdmin=false; render(); };
+
+window.addPred = async () => {
+  const t = document.getElementById("t").value.trim();
+  if(!t) return;
+  if(preds.filter(p=>p.userId===me.id).length>=MAX_PREDS) return alert("Máximo "+MAX_PREDS+" predicciones.");
+  const n = norm(t), words = new Set(n.split(" ").filter(w=>w.length>3));
+  const dup = preds.find(p=>{
+    if(!(p.userId===me.id || pubIds().has(p.userId))) return false;
+    const m = norm(p.text); if(m===n || m.includes(n) || n.includes(m)) return true;
+    const w2 = new Set(m.split(" ").filter(w=>w.length>3)); const inter = [...words].filter(w=>w2.has(w)).length;
+    const uni = new Set([...words,...w2]).size; return uni && inter/uni >= .6;
+  });
+  if(dup && !confirm("Se parece mucho a esta predicción de "+dup.userName+":\n\n«"+dup.text+"»\n\n¿Añadirla igualmente?")) return;
+  document.getElementById("t").value = "";
+  await addDoc(collection(db,"predictions"),{userId:me.id,userName:me.name,text:t,outcome:null,createdAt:serverTimestamp()});
+};
+window.delPred = id => deleteDoc(doc(db,"predictions",id));
+window.publish = async () => {
+  if(!confirm("Al publicar, tus predicciones quedan visibles para todos y ya no podrás cambiarlas. ¿Publicar?")) return;
+  await updateDoc(doc(db,"users",me.id),{published:true}); confetti();
+};
+window.vote = (predId,val) => setDoc(doc(db,"votes",me.id+"_"+predId),{userId:me.id,predId,vote:val});
+window.setPhase = p => setDoc(doc(db,"config","state"),{phase:p},{merge:true});
+window.setOutcome = (id,val) => updateDoc(doc(db,"predictions",id),{outcome:val});
+window.adminLogin = async () => {
+  const code = prompt("Código de administrador (si es la primera vez, el que elijas se guardará):");
+  if(!code) return;
+  const h = await hash("admin:"+code), ref = doc(db,"config","admin"), snap = await getDoc(ref);
+  if(!snap.exists()) await setDoc(ref,{hash:h});
+  else if(snap.data().hash !== h) return alert("Código incorrecto.");
+  isAdmin = true; sessionStorage.setItem("admin","1"); render();
+};
+
+const pubIds = () => new Set(users.filter(u=>u.published).map(u=>u.id));
+const PHASES = {predicciones:"1 · Predicciones", votacion:"2 · Votación", cerrada:"3 · Guardadas", resultados:"4 · Resultados"};
+const PHASE_NAME = {predicciones:"✍️ Haciendo predicciones", votacion:"🗳️ Votación sí/no", cerrada:"🔒 Esperando al año que viene", resultados:"🏆 Resultados"};
+
+/* ---- Vistas ---- */
+function render(){
+  const keep = document.getElementById("t");
+  const saved = keep ? {v: keep.value, f: document.activeElement === keep} : null;
+  const key = (me ? me.id : "login") + "|" + state.phase;
+  const animate = key !== lastKey; lastKey = key;
+  let i = 0; const st = () => `style="--i:${i++}"`;
+  let h = "";
+
+  if(!me){
+    app.className = animate ? "anim" : "";
+    app.innerHTML = `<div class="hero"><div class="big">🎆</div><h1>Predicciones ${state.year}</h1>
+      <p class="mut">Cena de fin de año en familia: ¿quién acierta más?</p></div>
+      ${LOCAL?`<div class="card mut" ${st()}>Modo local: los datos se guardan solo en este móvil.</div>`:""}
+      <div class="card" ${st()}><input id="n" placeholder="Tu nombre" autocomplete="off"><input id="p" type="password" placeholder="PIN (mín. 4 caracteres)">
+      <button class="btn block pulse" onclick="login()">Entrar / darme de alta</button>
+      <p class="mut" style="margin-bottom:0">Si ya te diste de alta, usa el mismo nombre y PIN.</p></div>`;
+    return;
+  }
+
+  const meUser = users.find(u=>u.id===me.id);
+  const published = !!(meUser && meUser.published);
+  const mine = preds.filter(p=>p.userId===me.id);
+  const pub = pubIds();
+
+  h += LOCAL ? `<div class="card mut" ${st()}>Modo local: los datos se guardan solo en este móvil.</div>` : "";
+  h += `<div class="row between"><h1>🎆 Predicciones ${state.year}</h1><button class="ghost" onclick="logout()">Salir</button></div>
+    <p class="mut">Hola, <b style="color:var(--ink)">${esc(me.name)}</b> · ${users.length} participantes</p>
+    <span class="tag">${PHASE_NAME[state.phase]}</span>`;
+
+  /* FASE 1 */
+  if(state.phase==="predicciones"){
+    h += `<h2>Tus predicciones (${mine.length}/${MAX_PREDS}) ${published?'<span class="lock">🔒 publicadas</span>':""}</h2>`;
+    mine.forEach(p=>h+=`<div class="card pred" ${st()}>${esc(p.text)}${published?"":` <div style="margin-top:8px"><button class="ghost" onclick="delPred('${p.id}')">🗑 Borrar</button></div>`}</div>`);
+    if(!published){
+      if(mine.length<MAX_PREDS) h += `<div class="card" ${st()}><textarea id="t" rows="2" placeholder="Ej.: Canarias ganará su primera medalla olímpica…"></textarea>
+        <button class="btn" onclick="addPred()">➕ Añadir predicción</button></div>`;
+      h += `<button class="btn block ${mine.length?"pulse":""}" ${mine.length?"":"disabled"} onclick="publish()">🚀 Publicar mis predicciones</button>
+        <p class="mut">Al publicar quedan visibles para todos (para que nadie las repita) y no se pueden cambiar.</p>`;
+    } else {
+      h += `<p class="mut">Ya están publicadas. Espera a que el resto termine y el organizador abra la votación.</p>`;
+    }
+    const others = preds.filter(p=>p.userId!==me.id && pub.has(p.userId));
+    h += `<h2>👀 Ya publicadas por la familia</h2>`;
+    h += others.length ? others.map(p=>`<div class="card" ${st()}><div class="who">${esc(p.userName)}</div><div class="pred">${esc(p.text)}</div></div>`).join("")
+                       : `<p class="mut">Todavía nadie ha publicado. Cuando lo hagan las verás aquí para no repetirlas.</p>`;
+    h += `<div class="chips">` + users.map(u=>`<span class="chip ${u.published?"done":""}" ${st()}>${u.published?"✅":"⏳"} ${esc(u.name)}</span>`).join("") + `</div>`;
+  }
+
+  /* FASE 2 */
+  if(state.phase==="votacion"){
+    const others = preds.filter(p=>p.userId!==me.id);
+    const done = others.filter(p=>votes.some(v=>v.id===me.id+"_"+p.id)).length;
+    const pct = others.length ? Math.round(done/others.length*100) : 100;
+    h += `<h2>¿Se cumplirá? (${done}/${others.length})</h2><div class="bar"><i style="width:${pct}%"></i></div>`;
+    others.forEach(p=>{
+      const v = votes.find(v=>v.id===me.id+"_"+p.id)?.vote;
+      h += `<div class="card" ${st()}><div class="who">${esc(p.userName)}</div><div class="pred">${esc(p.text)}</div>
+        <div class="row" style="margin-top:10px">
+        <button class="vote yes ${v===true?"sel":""}" onclick="vote('${p.id}',true)">👍 Sí</button>
+        <button class="vote no ${v===false?"sel":""}" onclick="vote('${p.id}',false)">👎 No</button></div></div>`;
+    });
+    if(pct===100 && others.length) h += `<div class="card" style="text-align:center">🎉 ¡Has votado todo!</div>`;
+  }
+
+  /* FASE 3 */
+  if(state.phase==="cerrada"){
+    h += `<div class="card" ${st()} style="text-align:center;font-size:1.05rem">🥂 Ronda cerrada.<br>Nos vemos el año que viene para los resultados.</div><h2>Todas las predicciones</h2>`;
+    preds.forEach(p=>{
+      const v = votes.find(v=>v.id===me.id+"_"+p.id)?.vote;
+      h += `<div class="card" ${st()}><div class="who">${esc(p.userName)}${p.userId===me.id?" (tú)":""}</div><div class="pred">${esc(p.text)}</div>
+        ${p.userId!==me.id?`<div class="mut" style="margin-top:6px">Tu voto: ${v===true?"👍 Sí":v===false?"👎 No":"—"}</div>`:""}</div>`;
+    });
+  }
+
+  /* FASE 4 */
+  if(state.phase==="resultados"){
+    const medals = ["🥇","🥈","🥉"];
+    h += `<h2>🏆 Clasificación</h2><div class="card" ${st()}>` + scores().map((s,k)=>`<div class="rank">
+      <div class="pos">${medals[k]||k+1}</div>
+      <div class="nm">${esc(s.name)}<div class="dt">Mías ✔${s.ownHit} ✘${s.ownMiss} · Votos ✔${s.voteHit} ✘${s.voteMiss}</div></div>
+      <div class="pts">${s.total}</div></div>`).join("") + `</div>
+      <p class="mut">Puntos = predicciones propias cumplidas + votos acertados.</p><h2>Predicciones</h2>`;
+    preds.forEach(p=>h+=`<div class="card" ${st()}><div class="who">${esc(p.userName)}</div><div class="pred">${esc(p.text)}</div>
+      <div class="res">${p.outcome===true?"✅ Se cumplió":p.outcome===false?"❌ No se cumplió":"⏳ Sin resolver"}</div></div>`);
+  }
+
+  /* Administración */
+  h += `<h2>⚙️ Organizador</h2>`;
+  if(!isAdmin) h += `<button class="ghost" onclick="adminLogin()">Soy el organizador</button>`;
+  else {
+    h += `<div class="admin"><p class="mut">Cambiar fase</p><div class="row">` +
+      Object.entries(PHASES).map(([k,v])=>`<button class="${state.phase===k?"btn":"ghost"}" onclick="setPhase('${k}')">${v}</button>`).join("") + `</div>
+      <p class="mut">Publicaron: ${users.filter(u=>u.published).length}/${users.length}</p></div>`;
+    if(state.phase==="resultados"){
+      h += `<div class="admin"><p class="mut">Marca el resultado de cada predicción</p>` +
+        preds.map(p=>`<div style="margin:12px 0"><b>${esc(p.userName)}</b>: ${esc(p.text)}<div class="row">
+          <button class="yes ${p.outcome===true?"sel":""}" onclick="setOutcome('${p.id}',true)">✅ Se cumplió</button>
+          <button class="no ${p.outcome===false?"sel":""}" onclick="setOutcome('${p.id}',false)">❌ No</button></div></div>`).join("") + `</div>`;
+    }
+  }
+
+  app.className = animate ? "anim" : "";
+  app.innerHTML = h;
+  if(saved){ const t = document.getElementById("t"); if(t){ t.value = saved.v; if(saved.f) t.focus(); } }
+  if(animate && state.phase==="resultados" && !celebrated){ celebrated = true; setTimeout(()=>confetti(200), 400); }
+}
+render();
+</script>
+</body>
+</html>
